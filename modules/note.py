@@ -1,3 +1,5 @@
+from hashlib import sha256
+
 class Note:
     # List of note names in ascending order (from C upwards)
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -129,6 +131,54 @@ class Note:
         note = note.enharmonic_equiv(letter=letters[(self_index + interval.number - 1) % 7])
         return note
 
+    def __sub__(self, other):
+        """
+        Subtract another Note from this one to determine the Interval between them,
+        considering both the diatonic (letter) interval and the chromatic (semitone) interval,
+        while also accounting for differences in octaves.
+
+        :param other: The other Note to subtract.
+        :return: An Interval object representing the difference between the two notes.
+        """
+        letters = "ABCDEFG"
+
+        # Calculate the diatonic interval without accidentals
+        self_no_acc = Note(self.letter, self.octave)
+        other_no_acc = Note(other.letter, other.octave)
+
+        self_index = letters.index(self_no_acc.letter)
+        other_index = letters.index(other_no_acc.letter)
+        diatonic_interval = (self_index - other_index) % 7 + 1  # Diatonic interval (1-7)
+
+        # Chromatic interval calculation (semitones difference)
+        chromatic_difference = int(self) - int(other)
+
+        # Account for octave difference
+        octave_difference = self.octave - other.octave
+        if self_index < other_index:
+            octave_difference -= 1
+        diatonic_interval += octave_difference * 7
+
+        # Determine quality of the interval
+        intervals = [0, 2, 4, 5, 7, 9, 11]  # Major scale semitones
+        base_semitones = intervals[(diatonic_interval - 1) % 7] + octave_difference * 12
+        quality = chromatic_difference - base_semitones
+
+        # Return the Interval object
+        return Interval(diatonic_interval, quality)
+
+    def __eq__(self, other):
+        """Check if two notes are equal, based on their chromatic position."""
+        return int(self) == int(other)
+
+    def __lt__(self, other):
+        """Check if the current note is less than the other note."""
+        return int(self) < int(other)
+
+    def __gt__(self, other):
+        """Check if the current note is greater than the other note."""
+        return int(self) > int(other)
+
 class Interval:
     def __init__(self, number, quality):
         self.number = number
@@ -232,22 +282,82 @@ class Interval:
         name = self.name()
         return (name[0].upper() if name[:2] != "mi" else name[0]) + name.split()[-1][:-2]
 
+    def __eq__(self, other):
+        """Check if two notes are equal, based on their chromatic position."""
+        return int(self) == int(other)
+
+    def __lt__(self, other):
+        """Check if the current note is less than the other note."""
+        return int(self) < int(other)
+
+    def __gt__(self, other):
+        """Check if the current note is greater than the other note."""
+        return int(self) > int(other)
+
 class Chord:
     def __init__(self, *intervals):
         self.intervals = list(intervals) 
         self.intervals.sort(key=lambda x: x.number)
 
-    def notes(self, starting):
-        notes = [starting]
+    def notes(self, base=Note("C", 4)):
+        notes = [base]
         for i in self.intervals:
-            notes.append(starting + i)
-        return str(notes)
+            notes.append(base + i)
+        return notes
 
-    def name(self, starting=None):
+    def quality(self):
+        intervals = [str(i) for i in self.intervals]
+
+        if "A5" in intervals:
+            quality = "aug"
+        elif "m3" in intervals:
+            if "m5" in intervals or "D7" in intervals:
+                quality = "dim"
+            else:
+                quality = "min"
+        elif "M7" in intervals:
+            quality = "maj" # dom
+        else: 
+            quality = "dom"
+
+        return quality
+
+    def sus(self):
+        intervals = [str(i) for i in self.intervals]
+        if "m3" not in intervals and "M3" not in intervals and (
+            "M2" in intervals or "M4" in intervals
+        ):
+            sus = "sus2"
+        else:
+            sus = "sus4"
+        return sus
+
+    def structure(self):
+        if [str(i) for i in self.intervals] == ["P5"]:
+            return "power"
+        notes = max(i.quality for i in self.intervals if i % 2)
+        match notes:
+            case 1:
+                return "unison"
+            case 3:
+                return "third"
+            case 5:
+                return "triad"
+            case 7:
+                return "seventh"
+            case 9:
+                return "ninth"
+            case 11:
+                return "eleventh"
+            case 13:
+                return "thirteenth"
+
+    def name(self, base=None):
         intervals = [str(i) for i in self.intervals]
 
         # step 1: find the highest note that matches one of these
         mains = {
+            "aug": ["P1", "M3", "A5", "M7", "M9", "M11", "M13"], # aug
             "maj": ["P1", "M3", "P5", "M7", "M9", "M11", "M13"], # maj
             "dom": ["P1", "M3", "P5", "m7", "M9", "M11", "M13"], # dom
             "min": ["P1", "m3", "P5", "m7", "M9", "M11", "M13"], # min
@@ -269,24 +379,11 @@ class Chord:
         sus = ""
 
         # step 2: decide the main quality
-        if "m3" not in intervals and "M3" not in intervals and (
-            "M2" in intervals or "M4" in intervals
-        ):
-            if "M2" in intervals:
-                if "M4" in intervals:
-                    additions.append(Interval(4, 0))
-                sus = "sus2"
-            else:
-                sus = "sus4"
-        if "m3" in intervals:
-            if "m5" in intervals or "D7" in intervals:
-                quality = "dim"
-            else:
-                quality = "min"
-        elif "M7" in intervals:
-            quality = "maj" # dom
-        else: 
-            quality = "dom"
+        quality = self.quality()
+        sus = self.sus()
+        if "M2" in intervals:
+            if "M4" in intervals:
+                additions.append(Interval(4, 0))
 
         # step 3: find alterations and additions for odd-numbered tones
         alterations = []
@@ -312,27 +409,92 @@ class Chord:
             adds.append(add)
 
         # step 4: assemble!
-        starter = starting if starting else ""
+        base = base.letter + base.accidental if base else ""
         quality = "" if quality == "dom" else quality
-        main_number = "" if main_number == "1" else main_number
+        main_number = "" if int(main_number) in [1, 5] else main_number
         alts = "".join(alts)
         adds = "".join("add" + a for a in adds)
-        return starter + sus + "^" + quality + main_number + " " + alts + " " + adds
+        return base + sus + "^" + quality + main_number + " " + alts + " " + adds
 
     def inversions(self):
         newints = [self.intervals]
 
         def cycle(intervals):
-            newints = intervals
-            new_octave = (newints[-1].number - 1) // 7 + 1
-            newints.append(Interval(7 * new_octave + 1, 0))
-            newints = [i - newints[0] for i in newints][1:]
-            return newints
+            newset = [i for i in intervals] 
+            new_octave = (newset[-1].number - 1) // 7 + 1
+            newset.append(Interval(7 * new_octave + 1, 0))
+            newset = [i - newset[0] for i in newset][1:]
+            return newset
         
         for _ in range(len(self.intervals)):
             newints.append(cycle(newints[-1]))
         
         return [Chord(*ints) for ints in newints] 
 
-    def __str__(self):
+    def color(self):
+        return "#" + sha256(str(i).encode("utf-8")).hexdigest()[:6]
+
+def __str__(self):
         return str(self.intervals)
+
+class ChordWithBase(Chord):
+    def __init__(self, *intervals, base=Note("C", 4)):
+        super().__init__(*intervals)
+        self.base = base
+
+    def notes(self, base=None):
+        if base is None:
+            base = self.base
+        return super().notes(base=base)
+
+    def name(self, base=None):
+        if base is None:
+            base = self.base
+        return super().name(base=base)
+
+    def inversions(self):
+        ls = super().inversions()
+
+        for i in range(len(self.intervals) + 1):
+            ls[i] = ChordWithBase(*ls[i].intervals, base=self.notes()[i])
+
+        return ls
+
+    def intervals_between_notes(self):
+        """
+        Calculate intervals between all pairs of notes and categorize them by interval number.
+        :return: A dictionary where keys are interval numbers, and values are lists of note pairs.
+        """
+        dic = {}
+
+        # Use combinations to get pairs of notes
+        notes_to_compare = self.notes()
+        for i in range(len(notes_to_compare)):
+            for j in range(i + 1, len(notes_to_compare)):  # Compare each pair, ensuring no repetitions
+                note1 = notes_to_compare[i]
+                note2 = notes_to_compare[j]
+                
+                # Ensure we get the correct interval between notes
+                interval = note2 - note1 if note2 > note1 else note1 - note2 
+
+                if interval.number not in dic:
+                    dic[interval.number] = []
+
+                # Add the pair to the dictionary under the appropriate interval number
+                dic[interval.number].append((note1, note2))
+
+        return dic
+
+funky = ChordWithBase(
+    Interval(3, 0), Interval(5, 1),
+    base=Note("C", 4)
+)
+
+print("name:", funky.name())
+print("inversions:")
+for i in funky.inversions():
+    print(i.name())
+    print(i.color())
+print("intervals:")
+print(funky.intervals_between_notes())
+
