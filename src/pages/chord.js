@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { Link } from 'react-router-dom';
-import Vex, { Accidental } from "vexflow";
-import { sha256 } from 'js-sha256'
+import { useParams, Link } from 'react-router-dom';
+import Vex, { Accidental } from 'vexflow';
+import { sha256 } from 'js-sha256';
+
+import Chord from '../modules/Chord'
 
 function getColor(chord) {
-  const hexColor = "#" + sha256(chord).slice(0, 6);  // Get first 6 characters of the SHA-256 hash
+  const hexColor = "#" + sha256(chord.id()).slice(0, 6);  // Get first 6 characters of the SHA-256 hash
 
   // Convert hex to RGB
   let r = parseInt(hexColor.slice(1, 3), 16);
@@ -99,45 +100,39 @@ const convertNotesToVexFlow = (notes) => {
   }).filter(Boolean); // Remove nulls in case of invalid notes
 };
 
-function ChordSVG({ chordIDs, highlight, endsOnly }) {
+function ChordSVG({ chords, highlight, endsOnly }) {
   const [chordNotes, setChordNotes] = useState([]);
   const [highlights, setHighlights] = useState([]);
-  const [colors, setColors] = useState([])
+  const [colors, setColors] = useState([]);
   const svgContainerRef = useRef(null); // Reference for the SVG container
 
   useEffect(() => {
     // Fetch chord data for each chordID
-    async function fetchInfo (origin, array, key, eo) {
+    async function fetchInfo(origin, array, eo) {
       try {
-        const promises = origin.map((chordID) =>
-          fetch(`/api/chord/${encodeURIComponent(chordID)}`).then((response) =>
-            response.json()
-          )
-        );
-        const chordData = await Promise.all(promises);
-        var vexNotes = chordData.map((data) => (data[key]))
-        if (key === "notes") {
-          vexNotes = vexNotes.map(notes => convertNotesToVexFlow(eo ? [notes[0], notes[notes.length - 1]] : notes)); // Convert each chord's notes to VexFlow format
-        }
+        let vexNotes = origin.map(chord => chord.notes().map(note => note.toString()));
+        vexNotes = vexNotes.map(notes =>
+          convertNotesToVexFlow(eo ? [notes[0], notes[notes.length - 1]] : notes)
+        ); // Convert each chord's notes to VexFlow format
         array(vexNotes);
       } catch (error) {
-        console.error("Error fetching chord data:", error);
+        console.error('Error fetching chord data:', error);
       }
     };
 
-    if (chordIDs) {
-      fetchInfo(chordIDs, setChordNotes, "notes");
+    if (chords) {
+      fetchInfo(chords, setChordNotes);
     }
     if (highlight) {
-      fetchInfo(highlight, setHighlights, "notes", endsOnly);
-      setColors(highlight.map(chord => getColor(chord)))
+      fetchInfo(highlight, setHighlights, endsOnly);
+      setColors(highlight.map(chord => getColor(chord)));
     }
-  }, [chordIDs]);
-  
+  }, [chords]);
+
   useEffect(() => {
     if (chordNotes.length > 0 && svgContainerRef.current) {
       // Clear previous SVG content
-      svgContainerRef.current.innerHTML = "";
+      svgContainerRef.current.innerHTML = '';
 
       // VexFlow setup
       const VF = Vex.Flow;
@@ -147,31 +142,30 @@ function ChordSVG({ chordIDs, highlight, endsOnly }) {
 
       // Create a stave
       const stave = new VF.Stave(10, 10, 130 + chordNotes.length * 100); // Extend stave width for all chords
-      stave.setStyle({ strokeStyle: "white", fillStyle: "white" });
+      stave.setStyle({ strokeStyle: 'white', fillStyle: 'white' });
       stave.setContext(context).draw();
 
-      const clef = stave.addClef("treble");
+      const clef = stave.addClef('treble');
       clef.setStyle({ fillStyle: 'white', strokeStyle: 'white' });
-      clef.drawWithStyle()
-      
+      clef.drawWithStyle();
+
       // Map each chord to a set of StaveNotes and format them
       const staveNotes = chordNotes.map((notes, index) => {
-        // Create StaveNotes for each chord
         const note = new VF.StaveNote({
           keys: notes,
-          duration: "w", // Whole note duration
+          duration: 'w', // Whole note duration
         });
 
         // Set default styles for the note
-        note.setStyle({ strokeStyle: "white", fillStyle: "white" });
-        note.setLedgerLineStyle({ fillStyle: "white", strokeStyle: "white" });
+        note.setStyle({ strokeStyle: 'white', fillStyle: 'white' });
+        note.setLedgerLineStyle({ fillStyle: 'white', strokeStyle: 'white' });
 
         // Highlight the notes if they are in the highlights for the current chord
-        notes.forEach((noteKey, noteindex) => {
+        notes.forEach((noteKey, noteIndex) => {
           // Check if the note is in the highlights list
           if (highlights[index] && highlights[index].includes(noteKey)) {
             const color = colors[index]; // Get the color for the current chord
-            note.setKeyStyle(noteindex, { strokeStyle: color, fillStyle: color });
+            note.setKeyStyle(noteIndex, { strokeStyle: color, fillStyle: color });
           }
         });
 
@@ -181,7 +175,7 @@ function ChordSVG({ chordIDs, highlight, endsOnly }) {
       // Create a voice for the notes
       const voice = new VF.Voice({ num_beats: 4 * chordNotes.length, beat_value: 4 });
       voice.addTickables(staveNotes);
-      Accidental.applyAccidentals([voice], "C")
+      Accidental.applyAccidentals([voice], 'C');
 
       // Format and render the voice
       new VF.Formatter().joinVoices([voice]).format([voice], stave.getWidth() - 40);
@@ -197,32 +191,29 @@ function ChordSVG({ chordIDs, highlight, endsOnly }) {
   );
 }
 
-function Chord() {
-  const { id } = useParams();  // Access the dynamic route parameter
-  const [chordInfo, setChordInfo] = useState(null);
+function ChordPage() {
+  const { id } = useParams(); // Access the dynamic route parameter
+  const [chord, setChord] = useState(null);
   const [interval, setInterval] = useState(0);
-  const [subchords, setSubchords] = useState([])
-  const [scales, setScales] = useState([])
-
+  const [subchords, setSubchords] = useState([]);
+  const [scales, setScales] = useState([]);
+ 
   useEffect(() => {
-    fetch(`/api/chord/${encodeURIComponent(id)}`)
-      .then((response) => response.json())
-      .then((data) => setChordInfo(data))
-      .catch((error) => console.error('Error fetching chord data:', error));
-    if (chordInfo) {
-      setInterval(Object.keys(chordInfo.intervals)[0])
+    setChord(Chord.idToChord(id))
+    if (chord) {
+      setInterval(Object.keys(chord.intervals)[0]);
     }
   }, [id]);
 
   useEffect(() => {
-    if (chordInfo) {
-      setSubchords(chordInfo.subchords[interval] || [])
-      setScales(chordInfo.scales['1.0'] ? chordInfo.scales['1.0'] : [])
+    if (chord) {
+      setSubchords(chord.subchords()[interval] || []);
+      setScales(chord.findMatchingScales()[1]);
     }
-  }, [interval])
+  }, [chord, interval]);
 
   function offsetIntervals(num) {
-    const intervals = Object.keys(chordInfo.intervals).sort();
+    const intervals = Object.keys(chord.intervals).sort();
     
     // Check if interval exists in the list, otherwise find the nearest one
     let index = intervals.indexOf(interval);
@@ -242,38 +233,34 @@ function Chord() {
     return intervals[(index + num) % intervals.length];
   }
 
-  if (!chordInfo) {
+  if (!chord) {
     return <div>loading...</div>;
   }
 
   return (
     <div className="body">
-      <h1>{formatChordID(chordInfo.id)}</h1>
-      <p style={{color: "#888"}}>({chordInfo.notes.join(", ")})</p>
-      <ChordSVG chordIDs={[chordInfo.id]} />
+      <h1>{formatChordID(id)}</h1>
+      <p style={{color: "#888"}}>({chord.notes().map(note => (note)).join(", ")})</p>
+      <ChordSVG chords={[chord]} />
 
       <div className="half-grid">
         <div>
           <h3>simplifications:</h3>
-          {chordInfo.simplifications.map((chord, index) => (
-            <Link to={`/chord/${encodeURIComponent(chord)}`}>
-              <div key={index} className="chord">
-                <p>{formatChordID(chord)}</p>
-                <ChordSVG chordIDs={[chord]} />
-              </div>
-            </Link>
+          {chord.simplifications().map((chord, index) => (
+            <div key={index} className="chord">
+              <p>{formatChordID(chord.id())}</p>
+              <ChordSVG chords={[chord]} />
+            </div>
           ))}
         </div>
 
         <div>
           <h3>extensions:</h3>
-          {chordInfo.extensions.map((chord, index) => (
-            <Link to={`/chord/${encodeURIComponent(chord)}`}>
-              <div key={index} className="chord">
-                <p>{formatChordID(chord)}</p>
-                <ChordSVG chordIDs={[chord]} />
-              </div>
-            </Link>
+          {chord.extensions().map((chord, index) => (
+            <div key={index} className="chord">
+              <p>{formatChordID(chord.id())}</p>
+              <ChordSVG chords={[chord]} />
+            </div>
           ))}
         </div>
       </div>
@@ -305,7 +292,7 @@ function Chord() {
           <h3>intervals:</h3>
           <div>
             <ChordSVG 
-              chordIDs={new Array(subchords.length).fill(chordInfo.id)} 
+              chords={new Array(subchords.length).fill(chord)} 
               highlight={subchords} 
               endsOnly={true}
             />
@@ -316,19 +303,19 @@ function Chord() {
           <h3>subchords:</h3>
           <div>
             <ChordSVG 
-              chordIDs={new Array(subchords.length).fill(chordInfo.id)} 
+              chords={new Array(subchords.length).fill(chord)} 
               highlight={subchords} 
-          />
+            />
           </div>
         </div>
       </div>
 
       <h3>transpositions:</h3>
       <ul>
-        <ChordSVG chordIDs={chordInfo.transpositions} />
+        <ChordSVG chords={chord.transpositions()} />
       </ul>
     </div>
   );
 }
 
-export default Chord;
+export default ChordPage;
