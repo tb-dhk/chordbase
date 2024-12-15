@@ -25,7 +25,7 @@ export default class Chord {
   quality() {
     const intervals = this.intervals.map(i => String(i));
     if (intervals.includes("m3")) {
-      if (intervals.includes("D5") && intervals.includes("D7")) {
+      if (intervals.includes("D5") || intervals.includes("D7")) {
         return "dim";
       } else {
         return "min";
@@ -97,10 +97,10 @@ export default class Chord {
     for (let interval of intervals) {
       const number = parseInt(interval.substring(1));
       const expectedInterval = Chord.MAINS[quality][Math.floor(number / 2)];
-      if (number % 2 === 1 && interval !== expectedInterval) {
-        alterations.push(new Interval(interval));
+      if (number % 2 === 1 && interval !== expectedInterval && !(aug && interval === "A5")) {
+        alterations.push(Interval.strToInterval(interval));
       } else if (number % 2 === 0 && sus.slice(3) !== String(number)) {
-        additions.push(new Interval(interval));
+        additions.push(Interval.strToInterval(interval));
       }
     }
 
@@ -132,9 +132,9 @@ export default class Chord {
   static idToChord(chordid) {
     // Regular expressions for parsing
     const basePattern = /^[A-G][#b]*/; // Base note (e.g., C, Bb, F#)
-    const augPattern = /aug/; // "aug" for augmented
+    const augPattern = /\^aug/; // "aug" for augmented
     const susPattern = /(sus\d+)/; // Sus chords (e.g., sus4, sus2)
-    const qualityPattern = /(\^min|\^maj|\^aug|\^dim|\^dom)/; // Quality (min, maj, etc.)
+    const qualityPattern = /(\^min|\^maj|\^dim|\^dom)/; // Quality (min, maj, etc.)
     const mainNumberPattern = /(\d+)/; // Main number (e.g., 7, 9, 13)
     const alterationPattern = /([b#♮]\d+)/g; // Alterations (e.g., #5, b9)
     const additionPattern = /add[b#]?\d+/g; // Additions (e.g., add9, add#11)
@@ -274,11 +274,11 @@ class ChordWithBase extends Chord {
     }
 
     const allIntervals = Chord.MAINS[chordQuality].slice(1);
-    const existingIntervals = new Set(this.intervals.map(i => String(i)));
+    const existingIntervals = new Set(this.intervals.map(i => i.toString().slice(1)));
     let possibleChords = [this];
 
     for (let interval of allIntervals) {
-      if (!existingIntervals.has(String(interval))) {
+      if (!existingIntervals.has(interval.slice(1))) {
         const newIntervals = [...possibleChords[possibleChords.length - 1].intervals, Interval.strToInterval(interval)];
         possibleChords.push(new ChordWithBase(this.base, ...newIntervals));
       }

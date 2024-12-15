@@ -51,21 +51,24 @@ export default class Interval {
          * @param {string} intervalStr - A string like 'M3', 'P5', 'A4', 'D7'.
          * @return {Interval} The corresponding Interval object.
          */
-        const qualityMap = {
-            'M': 0,   // Major
-            'm': -1,  // Minor
-            'P': 0,   // Perfect
-            'A': 1,   // Augmented
-            'D': -1   // Diminished for perfect intervals (-2 otherwise)
-        };
-
         const qualityChar = intervalStr[0];
         const number = parseInt(intervalStr.slice(1), 10);
 
         let quality;
         if ([1, 4, 5].includes(number % 7)) {  // Perfect intervals (1, 4, 5, +7n)
+            const qualityMap = {
+                'P': 0,   // Perfect
+                'A': 1,   // Augmented
+                'D': -1   // Diminished for perfect intervals (-2 otherwise)
+            };
             quality = qualityMap[qualityChar] || 0;
         } else {  // Major/minor intervals (2, 3, 6, 7, +7n)
+            const qualityMap = {
+                'M': 0,   // Major
+                'm': -1,  // Minor
+                'A': 1,   // Augmented
+                'D': -2   // Diminished for perfect intervals (-2 otherwise)
+            };
             quality = qualityMap[qualityChar] || 0;
         }
 
