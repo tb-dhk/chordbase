@@ -28,4 +28,4 @@ def get_data(chord_id):
 
 if __name__ == "__main__":
     dotenv.load_dotenv()
-    app.run(os.environ["PORT"])
+    app.run(port=os.environ["PORT"])
