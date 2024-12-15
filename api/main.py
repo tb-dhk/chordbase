@@ -1,6 +1,7 @@
 from flask import Flask, jsonify 
 from flask_cors import CORS
 from modules import Chord
+import os
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -25,4 +26,4 @@ def get_data(chord_id):
     })
 
 if __name__ == "__main__":
-    app.run()
+    app.run(port=os.environ["PORT"])
