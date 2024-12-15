@@ -5,6 +5,10 @@ from modules import Chord
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+@app.route('/')
+def hello():
+    return ":3"
+
 @app.route('/api/chord/<chord_id>', methods=['GET'])
 def get_data(chord_id):
     chord = Chord.name_to_chord(chord_id)
